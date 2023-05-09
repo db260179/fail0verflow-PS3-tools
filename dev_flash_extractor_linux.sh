@@ -1,3 +1,5 @@
+#!/bin/bash
+
 TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 echo "dev_flash & dev_flash3 extractor (for Linux)"
 echo ""
@@ -5,6 +7,12 @@ echo ""
 if [ $# -eq 2 ]; then
 	WORKPUP=$(readlink -f "$1")
 	WORKDIR=$(readlink -f "$2")
+
+	# Need the PS3 keys otherwise next steps won't work
+    if [ ! -d .ps3 ];then
+      echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder"
+      exit 1
+    fi
 
 	mkdir "$2" 2>/dev/null || sleep 0
 	cd "$2"

@@ -1,13 +1,15 @@
-#!/bin/sh
+#!/bin/bash
+
 TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+
 if [ $# -ne 2 ] ; then
     echo "Usage: pupexplode <pup> <out_dir>"
     echo "pupexplode expands all important files in a PUP and tries to decrypt every file as a self"
     exit 1
 fi
 
-pup=$1
-outdir=$2
+pup="$1"
+outdir="$2"
 
 $TOOLS/pupunpack $pup $outdir || exit
 
@@ -17,10 +19,19 @@ mkdir update_files
 cd update_files
 tar xvf ../update_files.tar || exit
 
+# Need the PS3 keys otherwise next steps won't work
+if [ ! -d .ps3 ];then
+  echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder"
+  exit 1
+fi
+
+if [ -f dev_flash* ];then
+
 for f in dev_flash*; do
     $TOOLS/unpkg $f ${f}_unpkg || exit
     tar xvf ${f}_unpkg/content || exit
 done
+fi
 
 for f in *.pkg; do
     $TOOLS/unpkg $f ${f%.pkg}

@@ -1,5 +1,7 @@
 #!/bin/bash
+
 TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+
 if [ $# -eq 1 ]; then
 	echo "Just for 3.56+ PUPs"
 	echo ""
@@ -12,6 +14,13 @@ if [ $# -eq 1 ]; then
 	mkdir update_files
 	cd update_files
 	tar -xf ../update_files.tar
+
+	# Need the PS3 keys otherwise next steps won't work
+    if [ ! -d .ps3 ];then
+       echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder"
+       exit 1
+    fi
+
 	echo ""
 	echo "Extracting SCE PKGs.."
         $TOOLS/unpkg CORE_OS_PACKAGE* CORE_OStmp
