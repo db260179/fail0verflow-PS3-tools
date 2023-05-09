@@ -5,3 +5,7 @@
 Linux:
 
 Requires make, gcc and libgmp3-dev: 'sudo apt install libgmp3-dev make gcc'
+
+Compile:
+
+'make' - built files and scripts found in 'BUILD' folder
