@@ -42,6 +42,28 @@ struct id2name_tbl t_sdk_type[] = {
 	{0, "Retail (Type 0)"},
 	{1, "Retail"},
 	{2, "Retail (Type 1)"},
+	{3, "Unknown SDK3"},
+	{4, "Retail >=3.40"},
+	{5, "Unknown SDK5"},
+	{6, "Unknown SDK6"},
+	{7, "Retail >=3.50"},
+	{8, "Unknown SDK8"},
+	{9, "Unknown SDK9"},
+	{10, "Retail >=3.55"},
+	{11, "Unknown SDK11"},
+	{12, "Unknown SDK12"},
+	{13, "Retail >=3.56"},
+	{14, "Unknown SDK14"},
+	{15, "Unknown SDK15"},
+	{16, "Retail >=3.60"},
+	{17, "Unknown SDK17"},
+	{18, "Unknown SDK18"},
+	{19, "Retail >=3.65"},
+	{20, "Unknown SDK20"},
+	{21, "Unknown SDK21"},
+	{22, "Retail >=3.70"},
+	{23, "Unknown SDK23"},
+	{24, "Unknown SDK24"},
 	{0x8000, "Devkit"},
 	{0, NULL}
 };
@@ -142,8 +164,8 @@ static void parse_self(void)
 static struct keylist *self_load_keys(void)
 {
 	enum sce_key id;
-
-	switch (app_type) {
+	
+    switch (app_type) {
 		case 1:
 			id = KEY_LV0;
 			break;
@@ -163,7 +185,7 @@ static struct keylist *self_load_keys(void)
 			id = KEY_LDR;
 			break;
 		case 8:
-			return NULL;
+			id = KEY_NPDRM;
 			break;
 		default:
 			fail("invalid type: %08x", app_type);	
@@ -180,7 +202,8 @@ static void decrypt_header(void)
 	if (klist == NULL)
 		return;
 
-	decrypted = sce_decrypt_header(self, klist);
+    sce_remove_npdrm(self, klist);
+    decrypted = sce_decrypt_header(self, klist);
 	free(klist->keys);
 	free(klist);
 }
@@ -217,13 +240,6 @@ static void show_self_header(void)
 	printf("\n");
 }
 
-static void print_hash(u8 *ptr, u32 len)
-{
-	while(len--)
-		printf(" %02x", *ptr++);
-}
-
-
 static void show_ctrl(void)
 {
 	u32 i, j;
@@ -242,6 +258,7 @@ static void show_ctrl(void)
 					printf("\n");
 					break;
 				}
+				goto unknown_type;
 			case 2:
 				if (length == 0x40) {
 					printf("  file digest:\n    ");
@@ -250,13 +267,13 @@ static void show_ctrl(void)
 					print_hash(self + ctrl_offset + i + 0x24, 0x14);
 					printf("\n");
 					break;
-				}
-				if (length == 0x30) {
+				} else if (length == 0x30) {
 					printf("  file digest:\n    ");
 					print_hash(self + ctrl_offset + i + 0x10, 0x14);
 					printf("\n");
 					break;
 				}
+				goto unknown_type;
 			case 3:
 				if (length == 0x90) {
 
@@ -279,7 +296,9 @@ static void show_ctrl(void)
 					printf("\n");
 					break;
 				}
+				goto unknown_type;
 			default:
+unknown_type:
 				printf("  unknown:\n");
 				for(j = 0; j < length; j++) {
 					if ((j % 16) == 0)
@@ -365,14 +384,14 @@ static void show_meta(void)
 	printf("\n");
 
 	printf("  Sections\n");
-	printf("    Offset            Length            Key IV  SHA1\n");
+	printf("    Offset            Length            Key IV  SHA1 Type\n");
 	for (i = 0; i < meta_n_hdr; i++) {
 		tmp = self + meta_offset + 0x80 + 0x30*i;
 		offset = be64(tmp);
 		size = be64(tmp + 8);
-		printf("    %08x_%08x %08x_%08x %03d %03d %03d\n",
+		printf("    %08x_%08x %08x_%08x %03d %03d %03d  %4d\n",
 		       (u32)(offset >> 32), (u32)offset, (u32)(size >> 32), (u32)size,
-		       be32(tmp + 0x24), be32(tmp + 0x28), be32(tmp + 0x1c));
+		       be32(tmp + 0x24), be32(tmp + 0x28), be32(tmp + 0x1c), be32(tmp + 0x10));
 	}
 	printf("\n");
 

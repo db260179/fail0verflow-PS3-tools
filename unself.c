@@ -81,7 +81,7 @@ static void read_section(u32 i, struct self_sec *sec)
 	sec->offset     = be64(ptr + 0x00);
 	sec->size       = be64(ptr + 0x08);
 	sec->compressed = be32(ptr + 0x10) == 2 ? 1 : 0;
-	sec->encrypted  = be32(ptr + 0x20);
+	sec->encrypted  = be32(ptr + 0x1c);
 	sec->next       = be64(ptr + 0x20);
 }
 
@@ -178,7 +178,11 @@ static void write_elf(void)
 				fail("failed to allocate %d bytes", size);
 
 			offset += size;
-	
+
+			printf("compressed self_sections[i].offset 0x%x self_sections[i].size 0x%x\n",
+				self_sections[i].offset,self_sections[i].size);
+
+
 			decompress(self + self_sections[i].offset,
 			           self_sections[i].size,
 				   bfr, size);
@@ -188,7 +192,7 @@ static void write_elf(void)
 			bfr = self + self_sections[i].offset;
 			size = self_sections[i].size;
 			offset += size;
-	
+
 			fwrite(bfr, size, 1, out);
 		}
 	}
@@ -280,7 +284,7 @@ static void check_elf(void)
 		shstrtab_offset = shdr_offset_new + n_shdr * 0x40;
 
 		remove_shnames(shdr_offset, n_shdr, shstrtab_offset, sizeof shstrtab);
-	
+
 		fseek(out, phdr_offset_new, SEEK_SET);
 		fwrite(elf + phdr_offset, 0x20, n_phdr, out);
 
@@ -312,7 +316,7 @@ static struct keylist *self_load_keys(void)
 		case 3:
 			id = KEY_LV2;
 			break;
-		case 4:	
+		case 4:
 			id = KEY_APP;
 			break;
 		case 5:
@@ -321,8 +325,11 @@ static struct keylist *self_load_keys(void)
 		case 6:
 			id = KEY_LDR;
 			break;
+        case 8:
+            id = KEY_NPDRM;
+            break;
 		default:
-			fail("invalid type: %08x", app_type);	
+			fail("invalid type: %08x", app_type);
 	}
 
 	return keys_get(id);
@@ -333,14 +340,21 @@ static void self_decrypt(void)
 	struct keylist *klist;
 
 	klist = self_load_keys();
-	if (klist == NULL)
+	if (klist == NULL) {
 		fail("no key found");
+	}
 
-	if (sce_decrypt_header(self, klist) < 0)
+    if (sce_remove_npdrm(self, klist) < 0) {
+        fail("self_remove_npdrm failed");
+    }
+
+	if (sce_decrypt_header(self, klist) < 0) {
 		fail("self_decrypt_header failed");
+	}
 
-	if (sce_decrypt_data(self) < 0)
+	if (sce_decrypt_data(self) < 0) {
 		fail("self_decrypt_data failed");
+	}
 }
 
 int main(int argc, char *argv[])
@@ -359,7 +373,7 @@ int main(int argc, char *argv[])
 	if (key_ver != 0x8000)
 		self_decrypt();
 
-	out = fopen(argv[2], "w+");
+	out = fopen(argv[2], "wb+");
 
 	write_elf();
 	check_elf();

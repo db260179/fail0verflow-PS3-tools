@@ -7,7 +7,7 @@
 
 #include "tools.h"
 
-void bn_print(char *name, u8 *a, u32 n)
+static void bn_print(char *name, u8 *a, u32 n)
 {
 	u32 i;
 

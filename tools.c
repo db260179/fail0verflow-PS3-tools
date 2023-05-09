@@ -1,10 +1,9 @@
-// Copyright 2010            Sven Peter <svenpeter@gmail.com>
+// Copyright 2010			Sven Peter <svenpeter@gmail.com>
 // Copyright 2007,2008,2010  Segher Boessenkool  <segher@kernel.crashing.org>
 // Licensed under the terms of the GNU GPL, version 2
 // http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
 #include <sys/types.h>
-#include <sys/mman.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -14,14 +13,44 @@
 #include <stdlib.h>
 #include <zlib.h>
 #include <dirent.h>
+#include <assert.h>
+
+#ifdef WIN32
+#include "mingw_mmap.h"
+#include <windows.h>
+#include <wincrypt.h>
+#else
+#include <sys/mman.h>
+#endif
 
 #include "tools.h"
 #include "aes.h"
 #include "sha1.h"
+#include "common.h"
+
+static struct id2name_tbl t_key2file[] = {
+		{KEY_LV0, "lv0"},
+		{KEY_LV1, "lv1"},
+		{KEY_LV2, "lv2"},
+		{KEY_APP, "app"},
+		{KEY_ISO, "iso"},
+		{KEY_LDR, "ldr"},
+		{KEY_PKG, "pkg"},
+		{KEY_SPP, "spp"},
+		{KEY_NPDRM, "app"},
+		{0, NULL}
+};
 
 //
 // misc
 //
+
+void print_hash(u8 *ptr, u32 len)
+{
+	while(len--)
+		printf(" %02x", *ptr++);
+}
+
 void *mmap_file(const char *path)
 {
 	int fd;
@@ -46,7 +75,7 @@ void memcpy_to_file(const char *fname, u8 *ptr, u64 size)
 {
 	FILE *fp;
 
-	fp = fopen(fname, "w");
+	fp = fopen(fname, "wb");
 	fwrite(ptr, size, 1, fp);
 	fclose(fp);
 }
@@ -102,6 +131,20 @@ const char *id2name(u32 id, struct id2name_tbl *t, const char *unk)
 	return unk;
 }
 
+#ifdef WIN32
+void get_rand(u8 *bfr, u32 size)
+{
+	HCRYPTPROV hProv;
+
+	if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
+		fail("unable to open random");
+
+	if (!CryptGenRandom(hProv, size, bfr))
+		fail("unable to read random numbers");
+
+	CryptReleaseContext(hProv, 0);
+}
+#else
 void get_rand(u8 *bfr, u32 size)
 {
 	FILE *fp;
@@ -115,6 +158,7 @@ void get_rand(u8 *bfr, u32 size)
 
 	fclose(fp);
 }
+#endif
 
 //
 // ELF helpers
@@ -133,7 +177,7 @@ int elf_read_hdr(u8 *hdr, struct elf_hdr *h)
 	hdr += 2;
 	h->e_version = be32(hdr);
 	hdr += 4;
-	
+
 	if (arch64) {
 		h->e_entry = be64(hdr);
 		h->e_phoff = be64(hdr + 8);
@@ -169,15 +213,15 @@ void elf_read_phdr(int arch64, u8 *phdr, struct elf_phdr *p)
 	if (arch64) {
 		p->p_type =   be32(phdr + 0);
 		p->p_flags =  be32(phdr + 4);
-		p->p_off =    be64(phdr + 1*8);
+		p->p_off =	be64(phdr + 1*8);
 		p->p_vaddr =  be64(phdr + 2*8);
 		p->p_paddr =  be64(phdr + 3*8);
 		p->p_filesz = be64(phdr + 4*8);
 		p->p_memsz =  be64(phdr + 5*8);
 		p->p_align =  be64(phdr + 6*8);
-	} else {	
+	} else {
 		p->p_type =   be32(phdr + 0*4);
-		p->p_off =    be32(phdr + 1*4);
+		p->p_off =	be32(phdr + 1*4);
 		p->p_vaddr =  be32(phdr + 2*4);
 		p->p_paddr =  be32(phdr + 3*4);
 		p->p_filesz = be32(phdr + 4*4);
@@ -271,6 +315,7 @@ void aes256cbc(u8 *key, u8 *iv_in, u8 *in, u64 len, u8 *out)
 	}
 }
 
+
 void aes256cbc_enc(u8 *key, u8 *iv, u8 *in, u64 len, u8 *out)
 {
 	AES_KEY k;
@@ -280,6 +325,56 @@ void aes256cbc_enc(u8 *key, u8 *iv, u8 *in, u64 len, u8 *out)
 	memcpy(tmp, iv, 16);
 	memset(&k, 0, sizeof k);
 	AES_set_encrypt_key(key, 256, &k);
+
+	while (len > 0) {
+		for (i = 0; i < 16; i++)
+			tmp[i] ^= *in++;
+
+		AES_encrypt(tmp, out, &k);
+		memcpy(tmp, out, 16);
+
+		out += 16;
+		len -= 16;
+	}
+}
+
+
+void aes128cbc(u8 *key, u8 *iv_in, u8 *in, u64 len, u8 *out)
+{
+	AES_KEY k;
+	u32 i;
+	u8 tmp[16];
+	u8 iv[16];
+
+	memcpy(iv, iv_in, 16);
+	memset(&k, 0, sizeof k);
+	AES_set_decrypt_key(key, 128, &k);
+
+	while (len > 0) {
+		memcpy(tmp, in, 16);
+		AES_decrypt(in, out, &k);
+
+		for (i = 0; i < 16; i++)
+			out[i] ^= iv[i];
+
+		memcpy(iv, tmp, 16);
+
+		out += 16;
+		in += 16;
+		len -= 16;
+
+	}
+}
+
+void aes128cbc_enc(u8 *key, u8 *iv, u8 *in, u64 len, u8 *out)
+{
+	AES_KEY k;
+	u32 i;
+	u8 tmp[16];
+
+	memcpy(tmp, iv, 16);
+	memset(&k, 0, sizeof k);
+	AES_set_encrypt_key(key, 128, &k);
 
 	while (len > 0) {
 		for (i = 0; i < 16; i++)
@@ -308,7 +403,7 @@ void aes128ctr(u8 *key, u8 *iv, u8 *in, u64 len, u8 *out)
 	for (i = 0; i < len; i++) {
 		if ((i & 0xf) == 0) {
 			AES_encrypt(iv, ctr, &k);
-	
+
 			// increase nonce
 			tmp = be64(iv + 8) + 1;
 			wbe64(iv + 8, tmp);
@@ -318,6 +413,21 @@ void aes128ctr(u8 *key, u8 *iv, u8 *in, u64 len, u8 *out)
 		*out++ = *in++ ^ ctr[i & 0x0f];
 	}
 }
+
+void aes128(u8 *key, const u8 *in, u8 *out) {
+	AES_KEY k;
+
+	assert(!AES_set_decrypt_key(key, 128, &k));
+	AES_decrypt(in, out, &k);
+}
+
+void aes128_enc(u8 *key, const u8 *in, u8 *out) {
+	AES_KEY k;
+
+	assert(!AES_set_encrypt_key(key, 128, &k));
+	AES_encrypt(in, out, &k);
+}
+
 
 
 // FIXME: use a non-broken sha1.c *sigh*
@@ -367,18 +477,6 @@ void sha1_hmac(u8 *key, u8 *data, u32 len, u8 *digest)
 	sha1(tmp, sizeof tmp, digest);
 
 }
-	
-static struct id2name_tbl t_key2file[] = {
-	{KEY_LV0, "lv0"},
-	{KEY_LV1, "lv1"},
-	{KEY_LV2, "lv2"},
-	{KEY_APP, "app"},
-	{KEY_ISO, "iso"},
-	{KEY_LDR, "ldr"},
-	{KEY_PKG, "pkg"},
-	{KEY_SPP, "spp"},
-	{0, NULL}
-};
 
 static int key_build_path(char *ptr)
 {
@@ -387,17 +485,26 @@ static int key_build_path(char *ptr)
 
 	memset(ptr, 0, 256);
 
-	dir = getenv("SONY_KEYS");
+	dir = getenv("PS3_KEYS");
 	if (dir != NULL) {
 		strncpy(ptr, dir, 256);
 		return 0;
 	}
 
+#ifdef WIN32
+		home = getenv("USERPROFILE");
+#else
 	home = getenv("HOME");
-	if (home == NULL)
-		return -1;
-
-	snprintf(ptr, 256, "%s/.ps3/", home);
+#endif
+	if (home == NULL) {
+		  snprintf (ptr, 256, "ps3keys");
+		} else {
+#ifdef WIN32
+		  snprintf(ptr, 256, "%s\\ps3keys\\", home);
+#else
+		  snprintf(ptr, 256, "%s/.ps3/", home);
+#endif
+		}
 
 	return 0;
 }
@@ -408,7 +515,7 @@ static int key_read(const char *path, u32 len, u8 *dst)
 	u32 read;
 	int ret = -1;
 
-	fp = fopen(path, "r");
+	fp = fopen(path, "rb");
 	if (fp == NULL)
 		goto fail;
 
@@ -430,7 +537,7 @@ struct keylist *keys_get(enum sce_key type)
 {
 	const char *name = NULL;
 	char base[256];
-	char path[256];
+	char path[1024];
 	void *tmp = NULL;
 	char *id;
 	DIR *dp;
@@ -457,7 +564,7 @@ struct keylist *keys_get(enum sce_key type)
 
 	while ((dent = readdir(dp)) != NULL) {
 		if (strncmp(dent->d_name, name, strlen(name)) == 0 &&
-		    strstr(dent->d_name, "key") != NULL) {
+			strstr(dent->d_name, "key") != NULL) {
 			tmp = realloc(klist->keys, (klist->n + 1) * sizeof(struct key));
 			if (tmp == NULL)
 				goto fail;
@@ -470,11 +577,15 @@ struct keylist *keys_get(enum sce_key type)
 			memset(&klist->keys[klist->n], 0, sizeof(struct key));
 
 			snprintf(path, sizeof path, "%s/%s-key-%s", base, name, id);
-			key_read(path, 32, klist->keys[klist->n].key);
-	
+			if (key_read(path, 32, klist->keys[klist->n].key) != 0) {
+				printf("  key file:   %s (ERROR)\n", path);
+			}
+
 			snprintf(path, sizeof path, "%s/%s-iv-%s", base, name, id);
-			key_read(path, 16, klist->keys[klist->n].iv);
-	
+			if (key_read(path, 16, klist->keys[klist->n].iv) != 0) {
+				printf("  iv file:	%s (ERROR)\n", path);
+			}
+
 			klist->keys[klist->n].pub_avail = -1;
 			klist->keys[klist->n].priv_avail = -1;
 
@@ -485,14 +596,66 @@ struct keylist *keys_get(enum sce_key type)
 
 				klist->keys[klist->n].pub_avail = 1;
 				klist->keys[klist->n].ctype = be32(bfr);
+			} else {
+				printf("  pub file:   %s (ERROR)\n", path);
 			}
 
 			snprintf(path, sizeof path, "%s/%s-priv-%s", base, name, id);
-			if (key_read(path, 21, klist->keys[klist->n].priv) == 0)
+			if (key_read(path, 21, klist->keys[klist->n].priv) == 0) {
 				klist->keys[klist->n].priv_avail = 1;
+			} else {
+				printf("  priv file:  %s (ERROR)\n", path);
+			}
 
 
 			klist->n++;
+		}
+	}
+
+	if (type == KEY_NPDRM) {
+		klist->idps = calloc(sizeof(struct key), 1);
+		if (klist->idps == NULL) {
+			goto fail;
+		}
+		snprintf(path, sizeof path, "%s/idps", base);
+		if (key_read(path, 16, klist->idps->key) != 0) {
+			printf("  key file:   %s (ERROR)\n", path);
+		}
+
+		klist->klic = calloc(sizeof(struct key), 1);
+		if (klist->klic == NULL) {
+			goto fail;
+		}
+		snprintf(path, sizeof path, "%s/klic-key", base);
+		if (key_read(path, 16, klist->klic->key) != 0) {
+			printf("  key file:   %s (ERROR)\n", path);
+		}
+
+		klist->rif = calloc(sizeof(struct key), 1);
+		if (klist->rif == NULL) {
+			goto fail;
+		}
+		snprintf(path, sizeof path, "%s/rif-key", base);
+		if (key_read(path, 16, klist->rif->key) != 0) {
+			printf("  key file:   %s (ERROR)\n", path);
+		}
+
+		klist->npdrm_const = calloc(sizeof(struct key), 1);
+		if (klist->npdrm_const == NULL) {
+			goto fail;
+		}
+		snprintf(path, sizeof path, "%s/npdrm-const", base);
+		if (key_read(path, 16, klist->npdrm_const->key) != 0) {
+			printf("  key file:   %s (ERROR)\n", path);
+		}
+
+		klist->free_klicensee = calloc(sizeof(struct key), 1);
+		if (klist->free_klicensee == NULL) {
+			goto fail;
+		}
+		snprintf(path, sizeof path, "%s/free_klicensee-key", base);
+		if (key_read(path, 16, klist->free_klicensee->key) != 0) {
+			printf("  key file:   %s (ERROR)\n", path);
 		}
 	}
 
@@ -512,24 +675,50 @@ fail:
 int key_get_simple(const char *name, u8 *bfr, u32 len)
 {
 	char base[256];
-	char path[256];
+	char path[1024];
 
-	if (key_build_path(base) < 0)
+	if (key_build_path(base) < 0) {
 		return -1;
+	}
 
-	snprintf(path, sizeof path, "%s/%s", base, name);
-	if (key_read(path, len, bfr) < 0)
+	snprintf(path, sizeof(path) - 1, "%s/%s", base, name);
+	if (key_read(path, len, bfr) < 0) {
 		return -1;
+	}
 
 	return 0;
 }
 
 int key_get(enum sce_key type, const char *suffix, struct key *k)
 {
-	const char *name;
+	const char *name = "";
+	const char *rev = "";
 	char base[256];
-	char path[256];
+	char path[1024];
 	u8 tmp[4];
+
+	if ( strncmp( suffix, "retail", strlen( suffix ) ) == 0 ) {
+		rev = "retail";
+	} else if ( atoi( suffix ) <= 92 ) {
+		suffix = "092";
+		rev = "0x00";
+	} else if ( atoi( suffix ) <= 331 ) {
+		suffix = "315";
+		rev = "0x01";
+	} else if ( atoi( suffix ) <= 342 ) {
+		suffix = "341";
+		rev = "0x04";
+	} else if ( atoi( suffix ) <= 350 ) {
+		suffix = "350";
+		rev = "0x07";
+	} else if ( atoi( suffix ) <= 355 ) {
+		suffix = "355";
+		rev = "0x0a";
+	} else if ( atoi( suffix ) <= 356 ) {
+		suffix = "356";
+		rev = "0x0d";
+	}
+	printf("  file suffix:	%s (rev %s)\n", suffix, rev );
 
 	if (key_build_path(base) < 0)
 		return -1;
@@ -538,41 +727,129 @@ int key_get(enum sce_key type, const char *suffix, struct key *k)
 	if (name == NULL)
 		return -1;
 
-	snprintf(path, sizeof path, "%s/%s-key-%s", base, name, suffix);
-	if (key_read(path, 32, k->key) < 0)
+	snprintf(path, sizeof(path) - 1, "%s/%s-key-%s", base, name, suffix);
+	if (key_read(path, 32, k->key) < 0) {
+		printf("  key file:   %s (ERROR)\n", path);
 		return -1;
-	
-	snprintf(path, sizeof path, "%s/%s-iv-%s", base, name, suffix);
-	if (key_read(path, 16, k->iv) < 0)
+	}
+
+	snprintf(path, sizeof(path) - 1, "%s/%s-iv-%s", base, name, suffix);
+	if (key_read(path, 16, k->iv) < 0) {
+		printf("  iv file:	%s (ERROR)\n", path);
 		return -1;
+	}
 
 	k->pub_avail = k->priv_avail = 1;
 
-	snprintf(path, sizeof path, "%s/%s-ctype-%s", base, name, suffix);
-	if (key_read(path, 4, tmp) < 0) { 
+	snprintf(path, sizeof(path) - 1, "%s/%s-ctype-%s", base, name, suffix);
+	if (key_read(path, 4, tmp) < 0) {
 		k->pub_avail = k->priv_avail = -1;
+		printf("  ctype file: %s (ERROR)\n", path);
 		return 0;
 	}
 
 	k->ctype = be32(tmp);
 
-	snprintf(path, sizeof path, "%s/%s-pub-%s", base, name, suffix);
-	if (key_read(path, 40, k->pub) < 0)
+	snprintf(path, sizeof(path) - 1, "%s/%s-pub-%s", base, name, suffix);
+	if (key_read(path, 40, k->pub) < 0) {
+		printf("  pub file:   %s (ERROR)\n", path);
 		k->pub_avail = -1;
+	}
 
-	snprintf(path, sizeof path, "%s/%s-priv-%s", base, name, suffix);
-	if (key_read(path, 21, k->priv) < 0)
+	snprintf(path, sizeof(path) - 1, "%s/%s-priv-%s", base, name, suffix);
+	if (key_read(path, 21, k->priv) < 0) {
+		printf("  priv file:  %s (ERROR)\n", path);
 		k->priv_avail = -1;
+	}
 
 	return 0;
-}	
+}
+
+struct rif *rif_get(const char *content_id) {
+	char base[256];
+	char path[1024];
+	struct rif *rif;
+	FILE *fp;
+	u32 read;
+	
+	rif = malloc(sizeof(struct rif));
+	if (rif == NULL) {
+		goto fail;
+	}
+
+	if (key_build_path(base) < 0) {
+		goto fail;
+	}
+
+	snprintf(path, sizeof(path) - 1, "%s/exdata/%s.rif", base, content_id);
+
+	fp = fopen(path, "rb");
+	if (fp == NULL) {
+		goto fail;
+	}
+
+	read = fread(rif, sizeof(struct rif), 1, fp);
+
+	if (read != 1) {
+		goto fail;
+	}
+
+	return rif;
+
+fail:
+	if (rif != NULL) {
+		free(rif);
+	}
+
+	return NULL; 
+}
+
+struct actdat *actdat_get(void) {
+	char base[256];
+	char path[1024];
+	struct actdat *actdat;
+	FILE *fp;
+	u32 read;
+	
+	actdat = malloc(sizeof(struct actdat));
+	if (actdat == NULL) {
+		goto fail;
+	}
+
+	if (key_build_path(base) < 0) {
+		goto fail;
+	}
+
+	snprintf(path, sizeof(path) - 1, "%s/exdata/act.dat", base);
+
+	fp = fopen(path, "rb");
+	if (fp == NULL) {
+		goto fail;
+	}
+
+	read = fread(actdat, sizeof(struct actdat), 1, fp);
+
+	if (read != 1) {
+		goto fail;
+	}
+
+	return actdat;
+
+fail:
+	if (actdat != NULL) {
+		free(actdat);
+	}
+
+	return NULL; 
+}
 
 static void memcpy_inv(u8 *dst, u8 *src, u32 len)
 {
 	u32 j;
 
-	for (j = 0; j < len; j++)
+	for (j = 0; j < len; j++) {
 		dst[j] = ~src[j];
+	}
 }
 
 int ecdsa_get_params(u32 type, u8 *p, u8 *a, u8 *b, u8 *N, u8 *Gx, u8 *Gy)
@@ -584,13 +861,15 @@ int ecdsa_get_params(u32 type, u8 *p, u8 *a, u8 *b, u8 *N, u8 *Gx, u8 *Gy)
 	if (type >= 64)
 		return -1;
 
-	if (key_build_path(path) < 0)
+	if (key_build_path(path) < 0) {
 		return -1;
+	}
 
-	strncat(path, "/curves", sizeof path);
+	strncat(path, "/curves", sizeof(path) - 1);
 
-	if (key_read(path, sizeof tbl, tbl) < 0)
+	if (key_read(path, sizeof(tbl), tbl) < 0) {
 		return -1;
+	}
 
 	offset = type * 121;
 
@@ -603,6 +882,77 @@ int ecdsa_get_params(u32 type, u8 *p, u8 *a, u8 *b, u8 *N, u8 *Gx, u8 *Gy)
 
 	return 0;
 }
+
+int sce_remove_npdrm(u8 *ptr, struct keylist *klist)
+{
+	u64 ctrl_offset;
+	u64 ctrl_size;
+	u32 block_type;
+	u32 block_size;
+	u32 license_type;
+	char content_id[0x31] = {'\0'};
+	struct rif *rif;
+	struct actdat *actdat;
+	u8 enc_const[0x10];
+	u8 dec_actdat[0x10];
+	struct key klicensee;
+	u64 i;
+
+	ctrl_offset = be64(ptr + 0x58);
+	ctrl_size = be64(ptr + 0x60);
+
+	for (i = 0; i < ctrl_size; ) {
+		block_type = be32(ptr + ctrl_offset + i);
+		block_size = be32(ptr + ctrl_offset + i + 0x4);
+
+		if (block_type == 3) {
+			license_type = be32(ptr + ctrl_offset + i + 0x18);
+			switch (license_type) {
+				case 1:
+					// cant decrypt network stuff
+					return -1;
+				case 2:
+					memcpy(content_id, ptr + ctrl_offset + i + 0x20, 0x30);
+					rif = rif_get(content_id);
+					if (rif == NULL) {
+						return -1;
+					}
+					aes128(klist->rif->key, rif->padding, rif->padding);
+					aes128_enc(klist->idps->key, klist->npdrm_const->key, enc_const);
+					actdat = actdat_get();
+					if (actdat == NULL) {
+						return -1;
+					}
+					aes128(enc_const, &actdat->keyTable[swap32(rif->actDatIndex)*0x10], dec_actdat);
+					aes128(dec_actdat, rif->key, klicensee.key);
+					sce_decrypt_npdrm(ptr, klist, &klicensee);
+					return 1;
+				case 3:
+					sce_decrypt_npdrm(ptr, klist, klist->free_klicensee);
+					return 1;
+			}
+		}
+
+		i += block_size;
+	}
+
+	return 0;
+}
+
+void sce_decrypt_npdrm(u8 *ptr, struct keylist *klist, struct key *klicensee)
+{
+	u32 meta_offset;
+	struct key d_klic;
+
+	meta_offset = be32(ptr + 0x0c);
+
+	// iv is 0
+	memset(&d_klic, 0, sizeof(struct key));
+	aes128(klist->klic->key, klicensee->key, d_klic.key);
+
+	aes128cbc(d_klic.key, d_klic.iv, ptr + meta_offset + 0x20, 0x40, ptr + meta_offset + 0x20);
+}
+
 
 int sce_decrypt_header(u8 *ptr, struct keylist *klist)
 {
@@ -618,20 +968,20 @@ int sce_decrypt_header(u8 *ptr, struct keylist *klist)
 	header_len  = be64(ptr + 0x10);
 
 	for (i = 0; i < klist->n; i++) {
-		aes256cbc(klist->keys[i].key,
-			  klist->keys[i].iv,
-			  ptr + meta_offset + 0x20,
-			  0x40,
-			  tmp); 
+		aes256cbc(klist->keys[i].key, klist->keys[i].iv, ptr + meta_offset + 0x20, 0x40, tmp);
 
 		success = 1;
-		for (j = 0x10; j < (0x10 + 0x10); j++)
-			if (tmp[j] != 0)
+		for (j = 0x10; j < (0x10 + 0x10); j++) {
+			if (tmp[j] != 0) {
 				success = 0;
-	
-		for (j = 0x30; j < (0x30 + 0x10); j++)
-			if (tmp[j] != 0)
-			       success = 0;
+			}
+		}
+
+		for (j = 0x30; j < (0x30 + 0x10); j++) {
+			if (tmp[j] != 0) {
+				success = 0;
+			}
+		}
 
 		if (success == 1) {
 			memcpy(ptr + meta_offset + 0x20, tmp, 0x40);
@@ -643,19 +993,11 @@ int sce_decrypt_header(u8 *ptr, struct keylist *klist)
 		return -1;
 
 	memcpy(tmp, ptr + meta_offset + 0x40, 0x10);
-	aes128ctr(ptr + meta_offset + 0x20,
-		  tmp,
-		  ptr + meta_offset + 0x60,
-		  0x20,
-		  ptr + meta_offset + 0x60);
+	aes128ctr(ptr + meta_offset + 0x20, tmp, ptr + meta_offset + 0x60, 0x20, ptr + meta_offset + 0x60);
 
 	meta_len = header_len - meta_offset;
 
-	aes128ctr(ptr + meta_offset + 0x20,
-		  tmp,
-		  ptr + meta_offset + 0x80,
-		  meta_len - 0x80,
-		  ptr + meta_offset + 0x80);
+	aes128ctr(ptr + meta_offset + 0x20, tmp, ptr + meta_offset + 0x80, meta_len - 0x80, ptr + meta_offset + 0x80);
 
 	return i;
 }
@@ -672,16 +1014,9 @@ int sce_encrypt_header(u8 *ptr, struct key *k)
 	meta_len = header_len - meta_offset;
 
 	memcpy(iv, ptr + meta_offset + 0x40, 0x10);
-	aes128ctr(ptr + meta_offset + 0x20,
-		  iv,
-		  ptr + meta_offset + 0x60,
-		  meta_len - 0x60,
-		  ptr + meta_offset + 0x60);
+	aes128ctr(ptr + meta_offset + 0x20, iv, ptr + meta_offset + 0x60, meta_len - 0x60, ptr + meta_offset + 0x60);
 
-	aes256cbc_enc(k->key, k->iv,
-	              ptr + meta_offset + 0x20,
-		      0x40,
-		      ptr + meta_offset + 0x20);
+	aes256cbc_enc(k->key, k->iv, ptr + meta_offset + 0x20, 0x40, ptr + meta_offset + 0x20);
 
 
 	return 0;
@@ -690,9 +1025,9 @@ int sce_encrypt_header(u8 *ptr, struct key *k)
 int sce_decrypt_data(u8 *ptr)
 {
 	u64 meta_offset;
-	u32 meta_len;
+	//u32 meta_len;
 	u32 meta_n_hdr;
-	u64 header_len;
+	//u64 header_len;
 	u32 i;
 
 	u64 offset;
@@ -704,8 +1039,8 @@ int sce_decrypt_data(u8 *ptr)
 	u8 iv[16];
 
 	meta_offset = be32(ptr + 0x0c);
-	header_len  = be64(ptr + 0x10);
-	meta_len = header_len - meta_offset;
+	//header_len  = be64(ptr + 0x10);
+	//meta_len = header_len - meta_offset;
 	meta_n_hdr = be32(ptr + meta_offset + 0x60 + 0xc);
 
 	for (i = 0; i < meta_n_hdr; i++) {
@@ -715,15 +1050,12 @@ int sce_decrypt_data(u8 *ptr)
 		keyid = be32(tmp + 0x24);
 		ivid = be32(tmp + 0x28);
 
-		if (keyid == 0xffffffff || ivid == 0xffffffff)
+		if (keyid == 0xffffffff || ivid == 0xffffffff) {
 			continue;
+		}
 
 		memcpy(iv, ptr + meta_offset + 0x80 + 0x30 * meta_n_hdr + ivid * 0x10, 0x10);
-		aes128ctr(ptr + meta_offset + 0x80 + 0x30 * meta_n_hdr + keyid * 0x10,
-		          iv,
- 		          ptr + offset,
-			  size,
-			  ptr + offset);
+		aes128ctr(ptr + meta_offset + 0x80 + 0x30 * meta_n_hdr + keyid * 0x10, iv, ptr + offset, size, ptr + offset);
 	}
 
 	return 0;

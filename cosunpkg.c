@@ -11,6 +11,12 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#ifdef WIN32
+#define MKDIR(x,y) mkdir(x)
+#else
+#define MKDIR(x,y) mkdir(x,y)
+#endif
+
 u8 *pkg = NULL;
 
 static void unpack_file(u32 i)
@@ -35,14 +41,15 @@ static void unpack_file(u32 i)
 static void unpack_pkg(void)
 {
 	u32 n_files;
-	u64 size;
+	//u64 size;
 	u32 i;
 
 	n_files = be32(pkg + 4);
-	size = be64(pkg + 8);
+	//size = be64(pkg + 8);
 
-	for (i = 0; i < n_files; i++)
+	for (i = 0; i < n_files; i++) {
 		unpack_file(i);
+	}
 }
 
 int main(int argc, char *argv[])
@@ -52,7 +59,7 @@ int main(int argc, char *argv[])
 
 	pkg = mmap_file(argv[1]);
 
-	mkdir(argv[2], 0777);
+	MKDIR(argv[2], 0777);
 
 	if (chdir(argv[2]) != 0)
 		fail("chdir");

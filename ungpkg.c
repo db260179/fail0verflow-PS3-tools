@@ -17,6 +17,13 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#ifdef WIN32
+#define MKDIR(x,y) mkdir(x)
+#else
+#define MKDIR(x,y) mkdir(x,y)
+#endif
+
+
 static u8 *pkg = NULL;
 static u64 size;
 static u64 offset;
@@ -90,7 +97,7 @@ static void unpack_pkg(void)
 
 		flags &= 0xff;
 		if (flags == 4)
-			mkdir(fname, 0777);
+			MKDIR(fname, 0777);
 		else if (flags == 1 || flags == 3)
 			memcpy_to_file(fname, pkg + file_offset, size);
 		else
@@ -116,7 +123,7 @@ int main(int argc, char *argv[])
 		dir = argv[2];
 	}
 
-	mkdir(dir, 0777);
+	MKDIR(dir, 0777);
 
 	if (chdir(dir) != 0)
 		fail("chdir(%s)", dir);

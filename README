@@ -1,2 +1,7 @@
-Copied from Hermes.
-https://github.com/hermesEOL/fail0verflow
+## Based on original failOverflow code - updated to work on modern compilers
+## Add support for MacOSX and Windows
+## Add scripts for extraction and packing using these compiled tools
+
+Linux:
+
+Requires make, gcc and libgmp3-dev: 'sudo apt install libgmp3-dev make gcc'

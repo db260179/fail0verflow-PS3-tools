@@ -12,6 +12,9 @@
 #include <sys/stat.h>
 #define	MAX_FILES	255
 
+#define COS_FILE_SIZE	7340000
+
+
 struct pkg_file {
 	char name[0x20];
 	u8 *ptr;
@@ -30,7 +33,7 @@ static void get_files(const char *d)
 	DIR *dir;
 	struct dirent *de;
 	struct stat st;
-	char path[256];
+	char path[1024];
 	u32 i;
 	u64 offset;
 
@@ -49,20 +52,21 @@ static void get_files(const char *d)
 
 		if (strcmp(de->d_name, "..") == 0)
 			continue;
-		
+
 		if (strlen(de->d_name) > 0x20)
 			fail("name too long: %s", de->d_name);
 
-		if (de->d_type != DT_REG)
-			fail("not a file: %s", de->d_name);
-
-		snprintf(path, sizeof path, "%s/%s", d, de->d_name);
+		snprintf(path, sizeof(path) - 1, "%s/%s", d, de->d_name);
 
 		memset(&files[i], 0, sizeof(*files));
 		strncpy(files[i].name, de->d_name, 0x19);
 
 		if (stat(path, &st) < 0)
 			fail("cannot stat %s", path);
+
+		if (!S_ISREG(st.st_mode))
+			fail("not a file: %s", de->d_name);
+
 		files[i].size = st.st_size;
 
 		files[i].ptr = mmap_file(path);
@@ -71,7 +75,7 @@ static void get_files(const char *d)
 
 		files[i].offset = offset;
 		offset = round_up(offset + files[i].size, 0x20);
-	
+
 		i++;
 		n_files++;
 	}
@@ -85,6 +89,11 @@ static void build_hdr(void)
 
 	file_size = files[n_files - 1].offset + files[n_files - 1].size;
 	hdr_size = 0x10 + n_files * 0x30;
+
+        if ((hdr_size + file_size) > COS_FILE_SIZE)
+          fail ("Too many files, size must be under %d but it is %d",
+              COS_FILE_SIZE, hdr_size + file_size);
+
 	hdr =  malloc(hdr_size);
 
 	if (hdr == NULL)
@@ -95,7 +104,7 @@ static void build_hdr(void)
 
 	wbe32(p + 0x00, 1);	// magic
 	wbe32(p + 0x04, n_files);
-	wbe32(p + 0x08, hdr_size + file_size);
+	wbe64(p + 0x08, COS_FILE_SIZE);
 	p += 0x10;
 
 	for (i = 0; i < n_files; i++) {
@@ -121,6 +130,9 @@ static void write_pkg(const char *n)
 		fseek(fp, files[i].offset + hdr_size, SEEK_SET);
 		fwrite(files[i].ptr, files[i].size, 1, fp);
 	}
+
+        fseek (fp, COS_FILE_SIZE-1, SEEK_SET);
+        fwrite("", 1, 1, fp);
 
 	fclose(fp);
 }

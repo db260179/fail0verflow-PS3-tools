@@ -1,4 +1,5 @@
 // Copyright 2010       Sven Peter <svenpeter@gmail.com>
+// Copyright 2011       glevand <geoffrey.levand@mail.ru>
 // Licensed under the terms of the GNU GPL, version 2
 // http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
@@ -15,7 +16,7 @@
 #define MKDIR(x,y) mkdir(x,y)
 #endif
 
-static u8 *nor = NULL;
+static u8 *cos = NULL;
 
 static void new_dir(const char *n)
 {
@@ -39,26 +40,11 @@ static void do_toc(u8 *ptr)
 	for(i = 0; i < n_entries; i++) {
 		memcpy(name, p + 16, 0x20);
 
-		if (strncmp(name, "asecure_loader", 0x20) == 0) {
-			new_dir("asecure_loader");
-			do_toc(ptr + be64(p));
-			if (chdir("..") < 0)
-				fail("chdir(..)");
-		} else if (strncmp(name, "ros", 3) == 0) {
-			new_dir(name);
-			do_toc(ptr + be64(p) + 0x10);
-			if (chdir("..") < 0)
-				fail("chdir(..)");
-		} else {
-			tmp = ptr + be64(p);
-			size = be64(p + 0x08);
-			if (be32(tmp + 0x10) == 0x53434500) {
-				tmp += 0x10;
-				size -= 0x10;
-			}
+		tmp = ptr + be64(p);
+		size = be64(p + 0x08);
 
-			memcpy_to_file(name, tmp, size);
-		}
+		memcpy_to_file(name, tmp, size);
+
 		p += 0x30;
 	}
 }
@@ -66,13 +52,13 @@ static void do_toc(u8 *ptr)
 int main(int argc, char *argv[])
 {
 	if (argc != 3)
-		fail("usage: norunpack dump.b directory");
+		fail("usage: cosunpack dump.b directory");
 
-	nor = mmap_file(argv[1]);
+	cos = mmap_file(argv[1]);
 
 	new_dir(argv[2]);
 
-	do_toc(nor + 0x400);
+	do_toc(cos);
 
 	return 0;
 }

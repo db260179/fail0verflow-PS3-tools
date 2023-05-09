@@ -5,8 +5,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "tools.h"
+
+#ifdef WIN32
+#define MKDIR(x,y) mkdir(x)
+#else
+#define MKDIR(x,y) mkdir(x,y)
+#endif
 
 static u8 *pup = NULL;
 static u8 pup_hmac[0x40];
@@ -16,7 +23,7 @@ static u64 hdr_size;
 
 static struct id2name_tbl t_names[] = {
 	{0x100, "version.txt"},
-	{0x101, "license.txt"},
+	{0x101, "license.xml"},
 	{0x102, "promo_flags.txt"},
 	{0x103, "update_flags.txt"},
 	{0x104, "patch_build.txt"},
@@ -25,13 +32,15 @@ static struct id2name_tbl t_names[] = {
 	{0x202, "dots.txt"},
 	{0x203, "patch_data.pkg"},
 	{0x300, "update_files.tar"},
+        {0x501, "spkg_hdr.tar"},
+	{0x601, "ps3swu2.self"},
 	{0, NULL}
 };
 
 static int check_hmac(u8 *hmac, u8 *bfr, u64 len)
 {
 	u8 calc[0x14];
-	
+
 	if (hmac == NULL)
 		return 1;
 
@@ -99,12 +108,12 @@ static void do_pup(void)
 	u64 data_size;
 	u64 i;
 	int res;
-	
+
 	n_sections = be64(pup + 0x18);
 	hdr_size   = be64(pup + 0x20);
 	data_size  = be64(pup + 0x28);
 
-	printf("sections:    %lld\n", n_sections);
+	printf("sections:    %" PRIu64 "\n", n_sections);
 	printf("hdr size:    %08x_%08x\n", (u32)(hdr_size >> 32), (u32)hdr_size);
 	printf("data size:   %08x_%08x\n", (u32)(data_size >> 32), (u32)data_size);
 	printf("header hmac: ");
@@ -134,7 +143,7 @@ int main(int argc, char *argv[])
 
 	if(pup != NULL)
 	{
-		if (mkdir(argv[2], 0777) < 0)
+		if (MKDIR(argv[2], 0777) < 0)
 			fail("mkdir(%s)", argv[2]);
 		if (chdir(argv[2]) < 0)
 			fail("chdir(%s)", argv[2]);

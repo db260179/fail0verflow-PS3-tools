@@ -167,6 +167,7 @@ static void fix_info_hdr(void)
 {
 	wbe64(info0 + 0x18, content_size_real);
 	wbe64(info0 + 0x20, content_size_compressed);
+	wbe64(info1 + 0x18, content_size_real);
 	wbe64(info1 + 0x20, content_size_compressed);
 }
 

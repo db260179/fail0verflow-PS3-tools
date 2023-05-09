@@ -165,7 +165,7 @@ static void build_info_hdr(void)
 			app_type = 6;
 			break;
 		default:
-			fail("something that should never fail failed.");	
+			fail("something that should never fail failed.");
 	}
 
 	wbe64(info_header + 0x00, auth_id);
@@ -210,7 +210,7 @@ static void build_sec_hdr(void)
 		wbe32(ptr + 0x14, 0);		// unknown
 		wbe32(ptr + 0x18, 0);		// unknown
 
-		if (phdr[i].p_type == 1) 
+		if (phdr[i].p_type == 1)
 			wbe32(ptr + 0x1c, 1);	// encrypted LOAD phdr
 		else
 			wbe32(ptr + 0x1c, 0);	// no loadable phdr
@@ -282,7 +282,7 @@ static void build_meta_hdr(void)
 
 	// add encrypted phdr information
 	for (i = 0; i < ehdr.e_phnum; i++) {
-		if (phdr[i].p_type == 1) 
+		if (phdr[i].p_type == 1)
 			meta_add_load(ptr, i);
 		else
 			meta_add_phdr(ptr, i);
@@ -308,7 +308,7 @@ static void calculate_hashes(void)
 			  phdr_map[i].size,
 			  keys + (i * 8) * 0x10
 			 );
-	}	
+	}
 }
 
 static void build_hdr(void)
@@ -345,7 +345,7 @@ static void compress_elf(void)
 	u32 i;
 	u64 offset;
 	uLongf size_zlib;
-	int res;
+//	int res;
 	u64 size_compressed;
 
 	offset = header_size;
@@ -368,7 +368,8 @@ static void compress_elf(void)
 		if (!phdr_map[i].ptr)
 			fail("out of memory");
 
-		res = compress(phdr_map[i].ptr, &size_zlib,
+		//res = compress(phdr_map[i].ptr, &size_zlib,
+		compress(phdr_map[i].ptr, &size_zlib,
 		               elf + phdr[i].p_off, phdr[i].p_filesz);
 
 		if (size_zlib >= phdr[i].p_filesz) {
@@ -470,7 +471,7 @@ static void get_version(const char *v)
 			ptr++;
 			continue;
 		}
-	
+
 		fprintf(stderr, "WARNING: invalid sdk_version, using 1.0.0\n");
 		version = 1ULL << 48;
 		return;

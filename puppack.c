@@ -28,7 +28,7 @@ static struct {
 
 static struct id2name_tbl t_names[] = {
 	{0x100, "version.txt"},
-	{0x101, "license.txt"},
+	{0x101, "license.xml"},
 	{0x102, "promo_flags.txt"},
 	{0x103, "update_flags.txt"},
 	{0x104, "patch_build.txt"},
@@ -37,6 +37,8 @@ static struct id2name_tbl t_names[] = {
 	{0x202, "dots.txt"},
 	{0x203, "patch_data.pkg"},
 	{0x300, "update_files.tar"},
+        {0x501, "spkg_hdr.tar"},
+	{0x601, "ps3swu2.self"},
 	{0, NULL}
 };
 
