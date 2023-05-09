@@ -14,11 +14,11 @@ if [ $# -eq 1 ]; then
 	mkdir update_files
 	cd update_files
 	tar -xf ../update_files.tar
-
+	
 	# Need the PS3 keys otherwise next steps won't work
-    if [ ! -d $TOOLS/.ps3 ];then
-       echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder"
-       exit 1
+    if [ ! -d $HOME/.ps3 ];then
+      echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder in you $HOME/.ps3"
+      exit 1
     fi
 
 	echo ""

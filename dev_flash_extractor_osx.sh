@@ -4,9 +4,9 @@ echo ""
 
 if [ $# -eq 1 ]; then
 
-    # Need the PS3 keys otherwise next steps won't work
-    if [ ! -d $TOOLS/.ps3 ];then
-      echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder"
+	# Need the PS3 keys otherwise next steps won't work
+    if [ ! -d $HOME/.ps3 ];then
+      echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder in you $HOME/.ps3"
       exit 1
     fi
 
