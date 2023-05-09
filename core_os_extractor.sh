@@ -16,7 +16,7 @@ if [ $# -eq 1 ]; then
 	tar -xf ../update_files.tar
 
 	# Need the PS3 keys otherwise next steps won't work
-    if [ ! -d .ps3 ];then
+    if [ ! -d $TOOLS/.ps3 ];then
        echo "PS3 folder '.ps3' doesn't exist!, please copy the requires ps3 keys to that folder"
        exit 1
     fi
